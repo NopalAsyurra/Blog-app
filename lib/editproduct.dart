@@ -4,78 +4,121 @@ import 'dart:convert';
 
 class Editproduct extends StatefulWidget {
   final Map<String, dynamic> data;
+  final http.Client? client;
 
-  const Editproduct({super.key, required this.data});
+  const Editproduct({super.key, required this.data, this.client});
 
   @override
   State<Editproduct> createState() => EditproductState();
 }
 
 class EditproductState extends State<Editproduct> {
-  late final titleController = TextEditingController(
-    text: widget.data['title'],
-  );
-  late final contentController = TextEditingController(
-    text: widget.data['content'] ?? '',
-  );
+  late final http.Client _client = widget.client ?? http.Client();
+  final titleController = TextEditingController();
+  final contentController = TextEditingController();
 
   List categories = [];
   int? selectedCategoryId;
 
   bool isSaving = false;
 
-  Future<void> getCategories() async {
-    final response = await http.get(
-      Uri.parse('http://localhost:3000/api/categories'),
-    );
+  int? _parseCategoryId(dynamic value) {
+    if (value == null) return null;
+    return int.tryParse(value.toString());
+  }
 
-    if (response.statusCode == 200 || response.statusCode == 201) {
-      final result = jsonDecode(response.body);
-      setState(() {
-        categories = result is List ? result : result['data'] ?? [];
-        selectedCategoryId = int.tryParse(
-          (widget.data['category_id'] ?? '').toString(),
-        );
-      });
+  Future<void> getCategories() async {
+    try {
+      final response = await _client.get(
+        Uri.parse('http://localhost:3000/api/categories'),
+      );
+
+      if (!mounted) return;
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final result = jsonDecode(response.body);
+        final data = result is List
+            ? result
+            : result is Map
+            ? (result['data'] ?? result['categories'] ?? [])
+            : <dynamic>[];
+
+        setState(() {
+          categories = data;
+          selectedCategoryId = _parseCategoryId(
+            widget.data['category_id'] ?? widget.data['categoryId'],
+          );
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Gagal memuat kategori')));
+      }
     }
   }
 
   Future<void> updateProduct() async {
-    if (selectedCategoryId == null) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Pilih kategori terlebih dahulu')));
+    final title = titleController.text.trim();
+    final content = contentController.text.trim();
+
+    if (title.isEmpty || content.isEmpty || selectedCategoryId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Isi semua data dan pilih kategori terlebih dahulu'),
+        ),
+      );
       return;
     }
+
     setState(() => isSaving = true);
 
-    final response = await http.put(
-      Uri.parse('http://localhost:3000/api/posts/${widget.data['id']}'),
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({
-        'category_id': selectedCategoryId.toString(),
-        'title': titleController.text,
-        'content': contentController.text,
-      }),
-    );
-    setState(() => isSaving = false);
-    if (response.statusCode == 200 || response.statusCode == 201) {
-      Navigator.pop(
-        context,
-      ); // Kembali ke halaman sebelumnya setelah berhasil menyimpan
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Data berhasil diupdate')));
-    } else {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Data gagal diupdate')));
+    try {
+      final response = await _client.put(
+        Uri.parse('http://localhost:3000/api/posts/${widget.data['id']}'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'category_id': selectedCategoryId,
+          'nama': title,
+          'title': title,
+          'content': content,
+        }),
+      );
+
+      if (!mounted) return;
+      setState(() => isSaving = false);
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        Navigator.pop(context, true);
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Data berhasil diupdate')));
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Data gagal diupdate (${response.statusCode}): ${response.body}',
+            ),
+          ),
+        );
+      }
+    } catch (error) {
+      if (mounted) {
+        setState(() => isSaving = false);
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Koneksi API gagal: $error')));
+      }
     }
   }
 
   @override
   void initState() {
     super.initState();
+    titleController.text = (widget.data['title'] ?? widget.data['nama'] ?? '')
+        .toString();
+    contentController.text = (widget.data['content'] ?? '').toString();
     getCategories();
   }
 
@@ -93,7 +136,9 @@ class EditproductState extends State<Editproduct> {
             value: selectedCategoryId,
             decoration: const InputDecoration(labelText: 'Kategori'),
             items: categories.map<DropdownMenuItem<int>>((category) {
-              final categoryId = int.tryParse(category['id'].toString());
+              final categoryId = int.tryParse(
+                (category['id'] ?? category['category_id']).toString(),
+              );
               return DropdownMenuItem<int>(
                 value: categoryId,
                 child: Text(

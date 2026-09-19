@@ -7,18 +7,22 @@ import 'package:lat_rpl_3/tambah%20product.dart';
 import 'package:lat_rpl_3/tambah%20kategori.dart';
 
 class HomePage extends StatefulWidget {
-  const HomePage({super.key});
+  final http.Client? client;
+
+  const HomePage({super.key, this.client});
 
   @override
   State<HomePage> createState() => _HomePageState();
 }
 
 class _HomePageState extends State<HomePage> {
+  late final http.Client _client = widget.client ?? http.Client();
   List products = [];
 
+// fetch apiget
   Future<void> getDataProduct() async {
     try {
-      final response = await http.get(
+      final response = await _client.get(
         Uri.parse('http://localhost:3000/api/posts'),
       );
 
@@ -54,7 +58,7 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> deleteProduct(int id) async {
-    final response = await http.delete(
+    final response = await _client.delete(
       Uri.parse('http://localhost:3000/api/posts/$id'),
     );
 
@@ -89,13 +93,18 @@ class _HomePageState extends State<HomePage> {
           itemBuilder: (context, index) {
             final itemproduct = products[index];
             return GestureDetector(
-              onTap: () {
-                Navigator.push(
+              onTap: () async {
+                final result = await Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (context) => Editproduct(data: itemproduct),
+                    builder: (context) =>
+                        Editproduct(data: itemproduct, client: _client),
                   ),
                 );
+
+                if (result == true) {
+                  getDataProduct();
+                }
               },
               child: ListTile(
                 leading: const CircleAvatar(child: Icon(Icons.article)),

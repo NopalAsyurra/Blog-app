@@ -23,7 +23,7 @@ class _AddCategoryPageState extends State<AddCategoryPage> {
     }
 
     setState(() => isSaving = true);
-
+// fetch api post
     try {
       final response = await http.post(
         Uri.parse('http://localhost:3000/api/categories'),
